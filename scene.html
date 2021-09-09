@@ -1,0 +1,326 @@
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>OpenGL Assignment</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+		<script src="js/three.js"></script>
+		<script src="js/dat.GUI.js"></script>
+		<script src="js/OBJloader.js"></script>
+	</head>
+	<body>
+		<script>
+		/* Setting Scene */
+			var scene = new THREE.Scene();
+
+		/* Initialise Camera Object */
+			var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+			// Move camera out of scene origin
+			camera.position.set( 5, 5, 5 );
+			// Make scene origin camera focal point
+			camera.lookAt( scene.position );
+
+		/* Initialise Renderer */
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+			// Enable shadow mapping
+			renderer.shadowMapEnabled = true;
+			// Enable softer shadows
+			renderer.shadowMapType = THREE.PCFSoftShadowMap;
+
+		
+		/* Define Geometry	*/
+			var geo_cube = new THREE.BoxGeometry( 2, 2, 2 );
+			var geo_vert = new THREE.SphereGeometry( 0.1, 50, 50 );
+			var cube_edge = new THREE.EdgesGeometry( geo_cube );
+			var geo_plane = new THREE.PlaneBufferGeometry(10, 10, 20, 20);
+			var scene_axis = new THREE.AxisHelper( 2.5 );
+			
+		/* Define Lighting */
+			var lights = [];
+			// White point lights with infinite range
+			lights[ 0 ] = new THREE.PointLight( 0xffffff, 1, 0 );
+			lights[ 1 ] = new THREE.PointLight( 0xffffff, 1, 0 );
+			// Enable shadow casting for both lights
+			lights[0].castShadow = true;
+			lights[1].castShadow = true;
+			// Set light positions
+			lights[ 0 ].position.set( -6, 6, 6 );
+			lights[ 1 ].position.set( -7, 7, 7 );
+			// Add lights to scene
+			scene.add( lights[ 0 ] );
+			scene.add( lights[ 1 ] );
+			
+		/* Define Materials */
+			var tex_cube = new THREE.TextureLoader().load( 'textures/crate1.jpg' );
+			var tex_blue = new THREE.TextureLoader().load( 'textures/colour.jpg' );
+			// Map crate texture onto cube
+			var mat_cube = new THREE.MeshLambertMaterial( { map: tex_cube } );
+			var mat_hidden = new THREE.MeshLambertMaterial( {color: 0x000000} );
+			var mat_vert = new THREE.MeshLambertMaterial( {color: 0xffff00} );
+			var mat_edge = new THREE.LineBasicMaterial( { color: 0x00ffbf } )
+			// Single sided plane - solid from above
+			var mat_plane = new THREE.MeshLambertMaterial({ color: 0xffffff, wireframe: false});
+			// Mesh plane - visible from both sidese
+			var mat_wirePlane = new THREE.MeshLambertMaterial({ color: 0xffffff, wireframe: true});
+			
+		/* Generate Geometry */
+			var cube = new THREE.Mesh( geo_cube, mat_cube );
+			cube.castShadow = true;		// Enable shadow casting for cube
+			// Hidden cube used to anchor external objects
+			var hidden_cube = new THREE.Mesh( geo_cube, mat_hidden );
+			hidden_cube.material.visible = false;	// Hide cube material
+			var wire_cube = new THREE.LineSegments( cube_edge, mat_edge);
+			// Create solid ground plane
+			var plane = new THREE.Mesh(geo_plane, mat_plane);
+			plane.receiveShadow = true;		// Allow ground plane to receive shadows
+			// Rotate ground plane to be perpendicular to Y axis
+			plane.rotateX( - Math.PI / 2);
+			plane.position.y -= 2;	// Shift ground plane to prevent clipping through cube
+			// Wire plane allows objects to still be viewed through the bottom of the ground plane
+			var wire_plane = new THREE.Mesh(geo_plane, mat_wirePlane);
+			wire_plane.receiveShadow = true;	// Allow ground plane to receive shadows
+			var vertices = new THREE.Group();
+			// For ever vertice in cube object
+			for ( var i = 0; i < geo_cube.vertices.length; i ++ ) {
+				var vertex = new THREE.Mesh( geo_vert, mat_vert );
+				// Copy coordinates from cube object to vertex object
+				vertex.position.x = geo_cube.vertices[i].x;
+				vertex.position.y = geo_cube.vertices[i].y;
+				vertex.position.z = geo_cube.vertices[i].z;
+				vertex.castShadow = true;	// Enable shadow casting
+				vertices.add( vertex );		// Add vertex to group
+			}
+		
+		/* Load External Object */
+			var loader = new THREE.OBJLoader();
+			loader.load('models/bunny-5000.obj', function ( obj ) {
+				// For all object children
+				obj.traverse( function ( child ) {
+					if ( child instanceof THREE.Mesh ) {
+						// Map texture
+						child.material.map = tex_blue;
+						// Enable shadows
+						child.castShadow = true;
+					}
+				} );
+				// Create bounding box for obj
+				var bbox_bunny = new THREE.Box3().setFromObject( obj );
+				// scale = size of cube / maximum obj dimension
+				var scale = 2 / Math.max( bbox_bunny.max.x - bbox_bunny.min.x, bbox_bunny.max.y - bbox_bunny.min.y, bbox_bunny.max.z - bbox_bunny.min.z );
+				// Translate obj 
+				obj.applyMatrix( new THREE.Matrix4().makeTranslation( -0.5, 0, 0 ) );
+				// Scale obj
+				obj.scale.set( scale, scale, scale );
+				// Add obj to cube anchor
+				hidden_cube.add( obj );
+			});
+		
+		/* Control options and variable */
+			var options = {
+				camera: {
+					focus_cube: false,	// Camera focus on cube
+				},
+				orbit: {
+					p: 0,		// Distance to orbit point
+					lon: 0,		// Longitude
+					lat: 0,		// Latitude
+					vec: new THREE.Vector3(-5,-5,-5),	// Vector to orbit point
+					point: new THREE.Vector3(0,0,0),	// Orbit Point
+					latitude: 'Off',	// Latitudinal orbit mode
+					longitude: 'Off',	// Longitudinal orbit mode
+					enabled: false		// Orbit enable
+				},
+				render: {
+					skin: 'Texture 1',	// Cube texture
+					mode: 'Full'		// Cube render mode
+				},
+				// Function called on reset button press and page load
+				reset: function() {
+					scene.add(plane);
+					plane.add(wire_plane);
+					scene.add(scene_axis);
+					camera.position.set(5, 5, 5);
+					camera.lookAt( cube.position );
+					scene.add( hidden_cube );
+					this.camera.focus_cube = false;
+					this.orbit.enabled = false;
+					this.orbit.latitude = 'Off';
+					this.orbit.longitude = 'Off';
+					this.render.skin = 'Texture 1';
+					this.render.mode = 'Full';
+					// Reset render mode
+					render_mode();
+					// Set Longitude and Latitude
+					set_lonlat();
+				}
+			};
+			
+		/* GUI Code */
+			var gui = new dat.GUI();
+			
+			// Camera controls
+			var cam = gui.addFolder('Camera');
+			cam.add(camera.position, 'x', -50, 50).listen();
+			cam.add(camera.position, 'y', -50, 50).listen();
+			cam.add(camera.position, 'z', -50, 50).listen();
+			cam.add(options.camera, 'focus_cube').name('Look at Cube').listen();
+			cam.open();
+			
+			// Render mode controls
+			var rendering = gui.addFolder('Render');
+			rendering.add(options.render, 'skin', [ 'Texture 1', 'Texture 2', 'Texture 3', 'Texture 4' ] ).onChange(function (value) { render_mode();}).listen().name('Texture');
+			rendering.add(options.render, 'mode', [ 'Full', 'Vertices', 'Edges', 'Faces' ] ).onChange(function (value) { render_mode();}).listen().name('Mode');
+			rendering.open();
+			
+			// Orbit mode controls
+			var orbiting = gui.addFolder('Orbit');
+			orbiting.add(options.orbit, 'latitude', [ 'Off', 'Clockwise', 'Counter Clockwise' ] ).onChange(function (value) { render_mode();}).listen().name('Latitudinal');
+			orbiting.add(options.orbit, 'longitude', [ 'Off', 'Ascending', 'Descending' ] ).onChange(function (value) { render_mode();}).listen().name('Longitudinal');
+			orbiting.add(options.orbit, 'enabled').onChange(function (value) { set_lonlat();}).listen().name('Enabled');
+			orbiting.open();
+			
+			gui.add(options, 'reset');
+
+		/* Render Control */
+			function render_mode() {
+				switch(options.render.skin) {
+					case "Texture 1":
+						cube.material.map = THREE.ImageUtils.loadTexture( 'textures/crate1.jpg' );
+						cube.material.needsUpdate = true;
+						break;
+					case "Texture 2":
+						cube.material.map = THREE.ImageUtils.loadTexture( 'textures/crate2.jpg' );
+						cube.material.needsUpdate = true;
+						break;
+					case "Texture 3":
+						cube.material.map = THREE.ImageUtils.loadTexture( 'textures/crate3.jpg' );
+						cube.material.needsUpdate = true;
+						break;
+					case "Texture 4":
+						cube.material.map = THREE.ImageUtils.loadTexture( 'textures/crate4.jpg' );
+						cube.material.needsUpdate = true;
+						break;
+					default:
+						cube.material.map = THREE.ImageUtils.loadTexture( 'textures/crate1.jpg' );
+						cube.material.needsUpdate = true;
+					break;
+				}	
+				
+				switch(options.render.mode) {
+					case "Full":
+						scene.add( cube );
+						scene.add( vertices );
+						scene.add( wire_cube );
+						break;
+					case "Vertices":
+						scene.add( vertices );
+						scene.remove( cube );
+						scene.remove( wire_cube );
+						break;
+					case "Edges":
+						scene.add( wire_cube );
+						scene.remove( cube );
+						scene.remove( vertices );
+						break;
+					case "Faces":
+						scene.add( cube );
+						scene.remove( vertices );
+						scene.remove( wire_cube );
+						break;
+					default:
+						scene.add( cube );
+						scene.add( vertices );
+						scene.add( wire_cube );
+					break;
+				}	
+			}
+			
+			function set_lonlat(){
+				if (options.orbit.enabled == true){
+					options.orbit.point.set( camera.position.x + options.orbit.vec.x,
+												camera.position.y + options.orbit.vec.y, 
+												camera.position.z + options.orbit.vec.z );
+				}
+				else if (options.orbit.enabled == false){
+					options.orbit.vec.set( -camera.position.x + options.orbit.point.x, 
+											-camera.position.y + options.orbit.point.y,
+											-camera.position.z + options.orbit.point.z );
+				}		
+				options.orbit.p = Math.sqrt(Math.pow(camera.position.z, 2) 
+									+ Math.pow(camera.position.x, 2) 
+									+ Math.pow(camera.position.y, 2));
+				options.orbit.lon = Math.acos(camera.position.y / options.orbit.p);
+				options.orbit.lat = Math.acos(camera.position.z / (options.orbit.p * Math.sin(options.orbit.lon)));
+			}
+			
+			function setOrbit() {
+				if ( options.orbit.latitude == "Clockwise" ){
+					options.orbit.lat -= 0.01;
+				}
+				else if ( options.orbit.latitude == "Counter Clockwise" ){
+					options.orbit.lat += 0.01;
+				}
+				
+				if ( options.orbit.longitude == "Ascending" ){
+					options.orbit.lon -= 0.01;
+				}
+				else if ( options.orbit.longitude == "Descending" ){
+					options.orbit.lon += 0.01;
+				}
+				
+				var p = Math.sqrt(Math.pow(camera.position.x - options.orbit.point.x, 2) 
+									+ Math.pow(camera.position.y - options.orbit.point.y, 2) 
+									+ Math.pow(camera.position.z - options.orbit.point.z, 2));
+			
+				var z = (p * Math.sin(options.orbit.lon) * Math.cos(options.orbit.lat)) + options.orbit.point.z;
+				var x = (p * Math.sin(options.orbit.lon) * Math.sin(options.orbit.lat)) + options.orbit.point.x;
+				var y = (p * Math.cos(options.orbit.lon)) + options.orbit.point.y;
+				
+				camera.position.set( x, y, z );
+				if ( options.camera.focus_cube == true ) {
+					camera.lookAt( cube.position );
+				}
+				else {
+					camera.lookAt( options.orbit.point );
+				}	
+			};
+
+			options.reset();
+			
+			var render = function() {
+
+				requestAnimationFrame(render);
+				
+				if(options.camera.focus_cube == true){
+					camera.lookAt( cube.position );
+				}
+				
+				if(options.orbit.enabled == true && (options.orbit.longitude != "Off" || options.orbit.latitude != "Off" )){
+					setOrbit();
+				}
+
+				cube.rotation.x += 0.01;
+				cube.rotation.y += 0.01;
+				cube.rotation.z += 0.01;
+				hidden_cube.rotation.x += 0.01;
+				hidden_cube.rotation.y += 0.01;
+				hidden_cube.rotation.z += 0.01;
+				vertices.rotation.x += 0.01;
+				vertices.rotation.y += 0.01;
+				vertices.rotation.z += 0.01;
+				wire_cube.rotation.x += 0.01;
+				wire_cube.rotation.y += 0.01;
+				wire_cube.rotation.z += 0.01;
+
+				renderer.render(scene, camera);
+
+			};
+			render();
+
+		</script>
+	</body>
+</html>
